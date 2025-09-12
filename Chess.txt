@@ -1,0 +1,21 @@
+A list of theoretically possible moves for each piece
+*required for discovered checks
+*only needs updating after a piece moves or when initialised
+A list of unblocked moves given a board
+*required for finding an actual move
+-> Each new move can be evaluated to ensure that it doesn't pull an illegal move
+   (move into check/ fail to escape check)
+A list of unblocked moves of which are guaranteed legal
+
+When we request a move,
+we need to go through a series of checks
+1. It is the correct players turn
+
+2a. The new position is one of the valid moves
+3a. This new position cannot put the king in check
+
+If already in check (but not mate)
+2b. 
+
+#a method of checking who is being checked
+#a method of checking if an executed move leads to check
