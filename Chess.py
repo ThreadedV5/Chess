@@ -2,51 +2,27 @@ import pygame, sys, random
 from pygame.locals import *
 import copy
 
-"""
-To do list
-
-verify checkmate
-
-Show a second view of the board, upside down
-"""
-#not used but may come in handy
-emptyBoard = [[None, None, None, None, None, None, None, None],
-         [None, None, None, None, None, None, None, None],
-         [None, None, None, None, None, None, None, None],
-         [None, None, None, None, None, None, None, None],
-         [None, None, None, None, None, None, None, None],
-         [None, None, None, None, None, None, None, None],
-         [None, None, None, None, None, None, None, None],
-         [None, None, None, None, None, None, None, None]]
-
-columns = {0:"A",
-           1:"B",
-           2:"C",
-           3:"D",
-           4:"E",
-           5:"F",
-           6:"G",
-           7:"H"}
-
-rows = {0:1,
-        1:2,
-        2:3,
-        3:4,
-        4:5,
-        5:6,
-        6:7,
-        7:8}
-
-
+# abstract class for all chess pieces
 class piece(object):
     def __init__(self, x, y, color):
         self.x = x
         self.y = y
         self.color = color
         self.hasMoved = False
-        self.freeMoves = []
-        self.subsetFreeMoves = []
-        self.limitedMoves = []
+
+        # A list of moves, abstracting dependency on prior elements
+        # (Consider subset forward of a rook, moving forward 6 is only possible
+        #  If you can move forward 5)
+        self.lineOfSight = []
+
+        # A list of lineOfSights
+        self.lineOfSightList = []
+        
+        # Line Of Sights, truncated vision (Also handles castling)
+        self.truncatedLineOfSights = [] 
+
+        # The final list of moves, 
+        # filtered for illegal moves which blunder the king,
         self.trueMoves = []
         self.updateFreeMoves()
         
@@ -55,42 +31,51 @@ class piece(object):
     
     def getColor(self):
         return(self.color)
-    #checks if coords lie on board, appends to self.subsetFreeMoves
-    def validateFreeMoves(self, coords):
+    # Checks if coords lie on board, appends to self.lineOfSight
+    def validateFreeMoveIsOnBoard(self, coords):
         if coords[0] >= 0 and coords[0] <= 7 and coords[1] >= 0 and coords[1] <= 7:
-            self.subsetFreeMoves.append(coords)
+            self.lineOfSight.append(coords)
             return True
         else:
             return False
-    #appends a subset of freeMoves to freeMoves
+    
+    # pop free moves and add it to lineOfSight
     def appendSubsetMoves(self):
-        if len(self.subsetFreeMoves) != 0:
-            self.freeMoves.append(self.subsetFreeMoves)
-            self.subsetFreeMoves = []
-    #limits freeMoves to spaces which can be moved to
-    def updateLimitedMoves(self, board):
-        self.limitedMoves = []
-        for i in self.freeMoves:
-            for j in range(len(i)):
-                if board[i[j][1]][i[j][0]] is not None:
-                    if self.color == board[i[j][1]][i[j][0]].color:
+        if len(self.lineOfSight) != 0:
+            self.lineOfSightList.append(self.lineOfSight)
+            self.lineOfSight = []
+    
+    # Filters lineOfSightList
+    # Truncates lineOfSights to the first piece seen
+    # Updates truncatedLineOfSights
+    def truncateLineOfSights(self, board):
+        self.truncatedLineOfSights = []
+        for lineOfSight in self.lineOfSightList:
+            for j in range(len(lineOfSight)):
+                rank = lineOfSight[j][1]
+                file = lineOfSight[j][0]
+                if board[rank][file] is not None:
+                    if self.color == board[rank][file].color:
+                        # Same colour piece, end lineOfSight
                         break
                     else:
-                        self.limitedMoves.append(i[j])
+                        # Different colour piece, take and end lineOfSight
+                        self.truncatedLineOfSights.append(lineOfSight[j])
                         break
                 else:
-                    self.limitedMoves.append(i[j])
-    #limits limitedMoves to only legal moves
+                    self.truncatedLineOfSights.append(lineOfSight[j])
+
+    #limits truncatedLineOfSights to only legal moves
     def updateTrueMoves(self, gameBoard, board):
         self.trueMoves = []
-        for i in self.limitedMoves:
+        for i in self.truncatedLineOfSights:
             if gameBoard.checkLegal(board, self.getCoords(), i):
                 self.trueMoves.append(i)
 
     
     #checks if a piece has a king in sight
     def validateCheckKing(self, coords):
-        if coords in self.limitedMoves:
+        if coords in self.truncatedLineOfSights:
             return True
         else:
             return False
@@ -101,27 +86,27 @@ class pawn(piece):
     def __init__(self, x, y, color):
         self.enPassantAble = False
         super().__init__(x, y, color)
-        
+    
     def updateFreeMoves(self):
-        self.freeMoves = []
-        self.subsetFreeMoves = []
+        self.lineOfSightList = []
+        self.lineOfSight = []
         if self.color == 'W':
-            self.validateFreeMoves([self.x,self.y+1])
+            self.validateFreeMoveIsOnBoard([self.x,self.y+1])
             if not self.hasMoved:
-                self.validateFreeMoves([self.x,self.y+2])
+                self.validateFreeMoveIsOnBoard([self.x,self.y+2])
         else:
-            self.validateFreeMoves([self.x,self.y-1])
+            self.validateFreeMoveIsOnBoard([self.x,self.y-1])
             if not self.hasMoved:
-                self.validateFreeMoves([self.x,self.y-2])
+                self.validateFreeMoveIsOnBoard([self.x,self.y-2])
         self.appendSubsetMoves()
-    def updateLimitedMoves(self,board):
-        self.limitedMoves = []
-        for i in self.freeMoves:
+    def truncateLineOfSights(self,board):
+        self.truncatedLineOfSights = []
+        for i in self.lineOfSightList:
             for j in range(len(i)):
                 if board[i[j][1]][i[j][0]] is not None:
                     break
                 else:
-                    self.limitedMoves.append(i[j])
+                    self.truncatedLineOfSights.append(i[j])
         #allow taking diagonally
         if self.getColor() == "W":
             step = 1
@@ -131,23 +116,23 @@ class pawn(piece):
             if self.x + 1 >= 0 and self.x + 1 <= 7:
                 if board[self.y + step][self.x + 1] is not None:
                     if board[self.y + step][self.x + 1].getColor() != self.getColor():
-                        self.limitedMoves.append([self.x+1,self.y+step])
+                        self.truncatedLineOfSights.append([self.x+1,self.y+step])
             if self.x - 1 >= 0 and self.x - 1 <= 7:
                 if board[self.y + step][self.x - 1] is not None:
                     if board[self.y + step][self.x - 1].getColor() != self.getColor():
-                        self.limitedMoves.append([self.x - 1,self.y + step])
+                        self.truncatedLineOfSights.append([self.x - 1,self.y + step])
         #allow en passant
         if (self.getColor() == "W" and self.y == 4) or (self.getColor() == "B" and self.y == 3):
             if self.x + 1 >= 0 and self.x + 1 <= 7:
                 if board[self.y][self.x + 1] is not None:
                     if board[self.y][self.x + 1].getChr() == "P":
                         if board[self.y][self.x + 1].enPassantAble == True:
-                            self.limitedMoves.append([self.x+1,self.y+step])
+                            self.truncatedLineOfSights.append([self.x+1,self.y+step])
             if self.x - 1 >= 0 and self.x - 1 <= 7:
                 if board[self.y][self.x - 1] is not None:
                     if board[self.y][self.x - 1].getChr() == "P":
                         if board[self.y][self.x - 1].enPassantAble == True:
-                            self.limitedMoves.append([self.x-1,self.y+step])
+                            self.truncatedLineOfSights.append([self.x-1,self.y+step])
         
             
 
@@ -160,19 +145,19 @@ class pawn(piece):
 
 class rook(piece):
     def updateFreeMoves(self):
-        self.freeMoves = []
-        self.subsetFreeMoves = []
+        self.lineOfSightList = []
+        self.lineOfSight = []
         count = 1
-        while self.validateFreeMoves([self.x, self.y + count]): count += 1
+        while self.validateFreeMoveIsOnBoard([self.x, self.y + count]): count += 1
         self.appendSubsetMoves()
         count = 1
-        while self.validateFreeMoves([self.x, self.y - count]): count += 1
+        while self.validateFreeMoveIsOnBoard([self.x, self.y - count]): count += 1
         self.appendSubsetMoves()
         count = 1
-        while self.validateFreeMoves([self.x + count, self.y]): count += 1
+        while self.validateFreeMoveIsOnBoard([self.x + count, self.y]): count += 1
         self.appendSubsetMoves()
         count = 1
-        while self.validateFreeMoves([self.x - count, self.y]): count += 1
+        while self.validateFreeMoveIsOnBoard([self.x - count, self.y]): count += 1
         self.appendSubsetMoves()
         
     def getChr(self):
@@ -180,109 +165,109 @@ class rook(piece):
 
 class knight(piece):
     def updateFreeMoves(self):
-        self.freeMoves = []
-        self.subsetFreeMoves = []
-        self.validateFreeMoves([self.x+1,self.y+2])
+        self.lineOfSightList = []
+        self.lineOfSight = []
+        self.validateFreeMoveIsOnBoard([self.x+1,self.y+2])
         self.appendSubsetMoves()
-        self.validateFreeMoves([self.x-1,self.y+2])
+        self.validateFreeMoveIsOnBoard([self.x-1,self.y+2])
         self.appendSubsetMoves()
-        self.validateFreeMoves([self.x+1,self.y-2])
+        self.validateFreeMoveIsOnBoard([self.x+1,self.y-2])
         self.appendSubsetMoves()
-        self.validateFreeMoves([self.x-1,self.y-2])
+        self.validateFreeMoveIsOnBoard([self.x-1,self.y-2])
         self.appendSubsetMoves()
-        self.validateFreeMoves([self.x+2,self.y+1])
+        self.validateFreeMoveIsOnBoard([self.x+2,self.y+1])
         self.appendSubsetMoves()
-        self.validateFreeMoves([self.x+2,self.y-1])
+        self.validateFreeMoveIsOnBoard([self.x+2,self.y-1])
         self.appendSubsetMoves()
-        self.validateFreeMoves([self.x-2,self.y+1])
+        self.validateFreeMoveIsOnBoard([self.x-2,self.y+1])
         self.appendSubsetMoves()
-        self.validateFreeMoves([self.x-2,self.y-1])
+        self.validateFreeMoveIsOnBoard([self.x-2,self.y-1])
         self.appendSubsetMoves()
     def getChr(self):
         return('N')
 
 class bishop(piece):
     def updateFreeMoves(self):
-        self.freeMoves = []
-        self.subsetFreeMoves = []
+        self.lineOfSightList = []
+        self.lineOfSight = []
         count = 1
-        while self.validateFreeMoves([self.x + count, self.y + count]) == 1: count += 1
+        while self.validateFreeMoveIsOnBoard([self.x + count, self.y + count]) == 1: count += 1
         self.appendSubsetMoves()
         count = 1
-        while self.validateFreeMoves([self.x + count, self.y - count]) == 1: count += 1
+        while self.validateFreeMoveIsOnBoard([self.x + count, self.y - count]) == 1: count += 1
         self.appendSubsetMoves()
         count = 1
-        while self.validateFreeMoves([self.x - count, self.y + count]) == 1: count += 1
+        while self.validateFreeMoveIsOnBoard([self.x - count, self.y + count]) == 1: count += 1
         self.appendSubsetMoves()
         count = 1
-        while self.validateFreeMoves([self.x - count, self.y - count]) == 1: count += 1
+        while self.validateFreeMoveIsOnBoard([self.x - count, self.y - count]) == 1: count += 1
         self.appendSubsetMoves()
     def getChr(self):
         return('B')
 
 class queen(piece):
     def updateFreeMoves(self):
-        self.freeMoves = []
-        self.subsetFreeMoves = []
+        self.lineOfSightList = []
+        self.lineOfSight = []
         count = 1
-        while self.validateFreeMoves([self.x + count, self.y + count]) == 1: count += 1
+        while self.validateFreeMoveIsOnBoard([self.x + count, self.y + count]) == 1: count += 1
         self.appendSubsetMoves()
         count = 1
-        while self.validateFreeMoves([self.x + count, self.y - count]) == 1: count += 1
+        while self.validateFreeMoveIsOnBoard([self.x + count, self.y - count]) == 1: count += 1
         self.appendSubsetMoves()
         count = 1
-        while self.validateFreeMoves([self.x - count, self.y + count]) == 1: count += 1
+        while self.validateFreeMoveIsOnBoard([self.x - count, self.y + count]) == 1: count += 1
         self.appendSubsetMoves()
         count = 1
-        while self.validateFreeMoves([self.x - count, self.y - count]) == 1: count += 1
+        while self.validateFreeMoveIsOnBoard([self.x - count, self.y - count]) == 1: count += 1
         self.appendSubsetMoves()
         count = 1
-        while self.validateFreeMoves([self.x, self.y + count]): count += 1
+        while self.validateFreeMoveIsOnBoard([self.x, self.y + count]): count += 1
         self.appendSubsetMoves()
         count = 1
-        while self.validateFreeMoves([self.x, self.y - count]): count += 1
+        while self.validateFreeMoveIsOnBoard([self.x, self.y - count]): count += 1
         self.appendSubsetMoves()
         count = 1
-        while self.validateFreeMoves([self.x + count, self.y]): count += 1
+        while self.validateFreeMoveIsOnBoard([self.x + count, self.y]): count += 1
         self.appendSubsetMoves()
         count = 1
-        while self.validateFreeMoves([self.x - count, self.y]): count += 1
+        while self.validateFreeMoveIsOnBoard([self.x - count, self.y]): count += 1
         self.appendSubsetMoves()
     def getChr(self):
         return('Q')
 
 class king(piece):
     def updateFreeMoves(self):
-        self.freeMoves = []
-        self.subsetFreeMoves = []
-        self.validateFreeMoves([self.x,self.y-1])
+        self.lineOfSightList = []
+        self.lineOfSight = []
+        self.validateFreeMoveIsOnBoard([self.x,self.y-1])
         self.appendSubsetMoves()
-        self.validateFreeMoves([self.x+1,self.y-1])
+        self.validateFreeMoveIsOnBoard([self.x+1,self.y-1])
         self.appendSubsetMoves()
-        self.validateFreeMoves([self.x+1,self.y])
+        self.validateFreeMoveIsOnBoard([self.x+1,self.y])
         self.appendSubsetMoves()
-        self.validateFreeMoves([self.x+1,self.y+1])
+        self.validateFreeMoveIsOnBoard([self.x+1,self.y+1])
         self.appendSubsetMoves()
-        self.validateFreeMoves([self.x,self.y+1])
+        self.validateFreeMoveIsOnBoard([self.x,self.y+1])
         self.appendSubsetMoves()
-        self.validateFreeMoves([self.x-1,self.y+1])
+        self.validateFreeMoveIsOnBoard([self.x-1,self.y+1])
         self.appendSubsetMoves()
-        self.validateFreeMoves([self.x-1,self.y])
+        self.validateFreeMoveIsOnBoard([self.x-1,self.y])
         self.appendSubsetMoves()
-        self.validateFreeMoves([self.x-1,self.y-1])
+        self.validateFreeMoveIsOnBoard([self.x-1,self.y-1])
         self.appendSubsetMoves()
-    def updateLimitedMoves(self,board):
-        super().updateLimitedMoves(board)
-        #enable castling
+    def truncateLineOfSights(self,board):
+        super().truncateLineOfSights(board)
+        # enable castling
         if self.hasMoved == False:
             if board[self.y][0] is not None:
                 if board[self.y][0].hasMoved == False:
                     if board[self.y][1] is None and board[self.y][2] is None:
-                        self.limitedMoves.append([1,self.y])
+                        self.truncatedLineOfSights.append([1,self.y])
             if board[self.y][7] is not None:
                 if board[self.y][7].hasMoved == False:
                     if board[self.y][4] is None and board[self.y][5] is None and board[self.y][6] is None:
-                        self.limitedMoves.append([5,self.y])
+                        self.truncatedLineOfSights.append([5,self.y])
                         
     def getChr(self):
         return('K')
@@ -300,17 +285,17 @@ class gameBoard:
          [rook(0,7,'B'), knight(1,7,'B'), bishop(2,7,'B'), king(3,7,'B'), queen(4,7,'B'), bishop(5,7,'B'), knight(6,7,'B'), rook(7,7,'B')]
          ]
         self.turn = "W"
-        self.updateLimitedMoves(self.board)
+        self.truncateLineOfSights(self.board)
         self.updateTrueMoves(self.board)
         self.gameOver = False
         
 
     #find all available moves for all pieces
-    def updateLimitedMoves(self, board):
+    def truncateLineOfSights(self, board):
         for i in board:
             for j in i:
                 if j is not None:
-                    j.updateLimitedMoves(board)
+                    j.truncateLineOfSights(board)
     def updateTrueMoves(self, board):
         for i in board:
             for j in i:
@@ -377,15 +362,17 @@ class gameBoard:
             return True
         else:
             return False
-
+        
+    # Takes two co-ordinates
+    # Returns true if a move was made
     def requestMove(self, oldCoords, newCoords):
         if self.board[oldCoords[1]][oldCoords[0]] is None:
-            print("You have not selected a piece")
+            print("You have not selectedPiece a piece")
             return False
         if self.board[oldCoords[1]][oldCoords[0]].getColor() != self.turn:
-            print("You have selected the wrong color piece")
+            print("You have selectedPiece the wrong color piece")
             return False
-        if newCoords not in self.board[oldCoords[1]][oldCoords[0]].limitedMoves:
+        if newCoords not in self.board[oldCoords[1]][oldCoords[0]].truncatedLineOfSights:
             print("Your piece cannot move there")
             return False
         if newCoords not in self.board[oldCoords[1]][oldCoords[0]].trueMoves:
@@ -476,7 +463,7 @@ class gameBoard:
             if abs(newCoords[1]-oldCoords[1]) == 2:
                 board[newCoords[1]][newCoords[0]].enableEnPassant()
                 
-        self.updateLimitedMoves(board)
+        self.truncateLineOfSights(board)
         return board
         
         
@@ -534,7 +521,8 @@ def main () :
   looping = True
 
   myBoard = gameBoard()
-  selected = None
+  # square that a player selects
+  selectedPiece = None
   
   # The main game loop
   while looping :
@@ -544,23 +532,27 @@ def main () :
         pygame.quit()
         sys.exit()
       if not myBoard.gameOver:
+          # Game only updates on MOUSEBUTTONDOWN
           if event.type == MOUSEBUTTONDOWN:
               if event.button == 1:
+                  # Verify square location
                   mouse_X, mouse_Y = pygame.mouse.get_pos()
                   square_X = int((mouse_X - BOARD_X) // SQUARE_WIDTH)
                   square_Y = int((mouse_Y - BOARD_Y) // SQUARE_HEIGHT)
+
+                  # Verify valid co-ordinates
                   if square_X >= 0 and square_X <= 7 and square_Y >= 0 and square_Y <= 7:
-                      if selected == None:
-                          selected = myBoard.board[square_Y][square_X]
+                      if selectedPiece == None:
+                          # Start Square
+                          selectedPiece = myBoard.board[square_Y][square_X]
                           selected_X, selected_Y  = square_X, square_Y
                       else:
+                          # End square
                           request = myBoard.requestMove([selected_X, selected_Y], [square_X, square_Y])
                           if request is False:
-                              selected = None
+                              selectedPiece = None
                           else:
-                              selected = None
-    
-    # Processing
+                              selectedPiece = None
  
     # Render elements of the game
     WINDOW.fill(BACKGROUND)
@@ -575,8 +567,8 @@ def main () :
                     WINDOW.blit( whitePieces[myBoard.board[j][i].getChr()] , (BOARD_X + (SQUARE_WIDTH*i), BOARD_Y + (SQUARE_HEIGHT*j)) )
                 else:
                     WINDOW.blit( blackPieces[myBoard.board[j][i].getChr()] , (BOARD_X + (SQUARE_WIDTH*i), BOARD_Y + (SQUARE_HEIGHT*j)) )
-    #Render the selected piece
-    if selected is not None:
+    #highlight in a green square the selectedPiece
+    if selectedPiece is not None:
         rect = pygame.Rect(BOARD_X + (selected_X * SQUARE_WIDTH), BOARD_Y + (selected_Y * SQUARE_HEIGHT), SQUARE_WIDTH, SQUARE_HEIGHT)
         pygame.draw.rect(WINDOW, GREEN, rect, 2)
 
